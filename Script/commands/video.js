@@ -15,13 +15,21 @@ async function downloadVideo(baseApi, url, api, event, title = null) {
     api.sendMessage("⏳ Video downloading...", event.threadID);
 
     const apiUrl = `${baseApi}/play?url=${encodeURIComponent(url)}`;
-    const res = await axios.get(apiUrl, { timeout: 20000 });
+    const res = await axios.get(apiUrl);
     const data = res.data;
 
-    if (!data.status || !data.videoUrl)
-      throw new Error("API Failed");
+    if (!data.status) throw new Error("API failed");
 
-    const videoTitle = (title || data.title).slice(0, 60);
+    // API যেটা দেয় সেটাই use করবে
+    const videoLink =
+      data.videoUrl ||
+      data.video ||
+      data.mp4 ||
+      data.downloadUrl;
+
+    if (!videoLink) throw new Error("No video link");
+
+    const videoTitle = (title || data.title || "video").slice(0, 60);
     const fileName = `${Date.now()}_${videoTitle}.mp4`
       .replace(/[\\/:"*?<>|]/g, "");
 
@@ -30,7 +38,7 @@ async function downloadVideo(baseApi, url, api, event, title = null) {
 
     const filePath = path.join(cacheDir, fileName);
 
-    const video = await axios.get(data.videoUrl, {
+    const video = await axios.get(videoLink, {
       responseType: "arraybuffer"
     });
 
@@ -45,7 +53,7 @@ async function downloadVideo(baseApi, url, api, event, title = null) {
       () => fs.unlinkSync(filePath)
     );
   } catch (e) {
-    console.log(e);
+    console.log("VIDEO ERROR:", e.message);
     api.sendMessage("❌ ভিডিও ডাউনলোড করা যায়নি", event.threadID);
   }
 }
@@ -54,8 +62,8 @@ module.exports.config = {
   name: "video",
   version: "2.0.0",
   hasPermssion: 0,
-  credits: "dipto + modified by Rahat",
-  description: "YouTube video download",
+  credits: "dipto + Rahat Fix",
+  description: "YouTube video download (fast API)",
   commandCategory: "media",
   usages: "[video name/link]",
   cooldowns: 5
@@ -67,8 +75,9 @@ module.exports.run = async function ({ api, event, args }) {
   try {
     const res = await axios.get(nix);
     baseApi = res.data.api;
+    if (!baseApi) throw new Error("API missing");
   } catch {
-    return api.sendMessage("❌ API load failed", event.threadID);
+    return api.sendMessage("❌ API config load failed", event.threadID);
   }
 
   if (!args.length)
@@ -76,12 +85,12 @@ module.exports.run = async function ({ api, event, args }) {
 
   const query = args.join(" ");
 
-  // direct link
+  // direct youtube link
   if (query.startsWith("http")) {
     return downloadVideo(baseApi, query, api, event);
   }
 
-  // search
+  // search system
   const search = await yts(query);
   const videos = search.videos.slice(0, 6);
 
@@ -103,6 +112,8 @@ module.exports.run = async function ({ api, event, args }) {
     { body: msg, attachment: thumbs },
     event.threadID,
     (err, info) => {
+      if (err) return console.log(err);
+
       global.client.handleReply.push({
         name: module.exports.config.name,
         messageID: info.messageID,
