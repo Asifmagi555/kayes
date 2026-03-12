@@ -5,7 +5,7 @@ const { createCanvas, loadImage } = require("canvas");
 
 module.exports.config = {
     name: "uid",
-    version: "4.1.0",
+    version: "4.2.0",
     hasPermssion: 0,
     credits: "Rahat Islam (fixed by assistant)",
     description: "Get UID with Neon Image Card",
@@ -66,7 +66,7 @@ async function createUserImage(name, uid, avatarUrl) {
     try {
         avatar = await loadImage(avatarUrl);
     } catch (err) {
-        // Create a simple gradient circle as fallback
+        console.error("Avatar load error:", err.message);
         avatar = null;
     }
 
@@ -78,13 +78,13 @@ async function createUserImage(name, uid, avatarUrl) {
     if (avatar) {
         ctx.drawImage(avatar, 60, 60, 180, 180);
     } else {
-        // Fallback: gradient circle
+        // Fallback: gradient circle with "?"
         const gradient = ctx.createRadialGradient(150, 150, 0, 150, 150, 90);
         gradient.addColorStop(0, "#ff00ff");
         gradient.addColorStop(1, "#00ffff");
         ctx.fillStyle = gradient;
         ctx.fillRect(60, 60, 180, 180);
-        // Draw a question mark
+        // Draw question mark
         ctx.restore();
         ctx.save();
         ctx.beginPath();
@@ -130,7 +130,7 @@ async function createUserImage(name, uid, avatarUrl) {
     ctx.lineTo(width - 100, 240);
     ctx.stroke();
 
-    // Reset shadow (optional)
+    // Reset shadow
     ctx.shadowBlur = 0;
     ctx.shadowColor = "transparent";
 
@@ -141,7 +141,6 @@ module.exports.run = async function ({ api, event, args }) {
     const { threadID, messageID, senderID } = event;
 
     let uid = senderID;
-    let isLink = false;
 
     // --- 1. Reply ---
     if (event.type === "message_reply") {
@@ -159,12 +158,11 @@ module.exports.run = async function ({ api, event, args }) {
                 const resolvedUID = await api.getUID(args[0]);
                 if (resolvedUID) {
                     uid = resolvedUID;
-                    isLink = true;
                 } else {
                     return api.sendMessage("❌ লিঙ্ক থেকে UID পাওয়া যায়নি।", threadID, messageID);
                 }
             } catch (err) {
-                return api.sendMessage("❌লিঙ্কটি সঠিক কিনা দেখুন।", threadID, messageID);
+                return api.sendMessage("❌ UID রূপান্তর ব্যর্থ। লিঙ্কটি সঠিক কিনা দেখুন।", threadID, messageID);
             }
         }
         // 3b. Numeric UID
@@ -185,11 +183,12 @@ module.exports.run = async function ({ api, event, args }) {
         userInfo = await api.getUserInfo(uid);
         name = userInfo[uid].name;
     } catch (err) {
-        return api.sendMessage("❌তথ্য পাওয়া যায়নি।", threadID, messageID);
+        return api.sendMessage("❌ ব্যবহারকারীর তথ্য পাওয়া যায়নি।", threadID, messageID);
     }
 
-    // --- Avatar URL ---
-    const avatarUrl = `https://graph.facebook.com/${uid}/picture?width=720&height=720`;
+    // --- Avatar URL with access token (provided by user) ---
+    const token = "6628568379|c1e620fa708a1d5696fb991c1bde5662"; // ← your token
+    const avatarUrl = `https://graph.facebook.com/${uid}/picture?width=720&height=720&access_token=${token}`;
 
     // --- Generate image ---
     try {
@@ -198,7 +197,7 @@ module.exports.run = async function ({ api, event, args }) {
         fs.writeFileSync(filePath, imgBuffer);
 
         await api.sendMessage({
-            body: `👤 ${name}`,
+            body: `👤 ${name} \n🆔 ${uid}`,
             attachment: fs.createReadStream(filePath)
         }, threadID, () => fs.unlinkSync(filePath), messageID);
     } catch (err) {
