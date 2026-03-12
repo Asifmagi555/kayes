@@ -1,157 +1,158 @@
+const axios = require("axios");
+const fs = require("fs-extra");
+const path = require("path");
+const { createCanvas, loadImage } = require("canvas");
+
 module.exports.config = {
-	name: "uid",
-	version: "2.0.0",
-	hasPermssion: 0,
-	credits: "🔰𝐑𝐀𝐇𝐀𝐓 𝐈𝐒𝐋𝐀𝐌🔰",
-	description: "Get User ID.",
-	commandCategory: "Tools",
-	usages: "[@mention/reply/UID/link/name]",
-	cooldowns: 5
+    name: "uid",
+    version: "4.0.0",
+    hasPermssion: 0,
+    credits: "Rahat Islam",
+    description: "Get UID with Neon Image Card",
+    commandCategory: "tools",
+    usages: "uid / reply / mention / link",
+    cooldowns: 5
 };
 
-async function getUIDByFullName(api, threadID, body) {
-	if (!body.includes("@")) return null;
-	
-	const match = body.match(/@(.+)/);
-	if (!match) return null;
-	
-	const targetName = match[1].trim().toLowerCase().replace(/\s+/g, " ");
-	const threadInfo = await api.getThreadInfo(threadID);
-	const users = threadInfo.userInfo || [];
-	
-	const user = users.find(u => {
-		if (!u.name) return false;
-		const fullName = u.name.trim().toLowerCase().replace(/\s+/g, " ");
-		return fullName === targetName;
-	});
-	
-	return user ? user.id : null;
+// ===== Helper: Full Name Mention Detection =====
+async function getUIDByFullName(api, threadID, text) {
+
+    const threadInfo = await api.getThreadInfo(threadID);
+    const users = threadInfo.userInfo;
+
+    const name = text.replace("@","").trim().toLowerCase();
+
+    for (let user of users) {
+
+        if (!user.name) continue;
+
+        if (user.name.toLowerCase() == name) {
+            return user.id;
+        }
+    }
+
+    return null;
 }
 
-module.exports.run = async function({ api, event, args }) {
-	const { threadID, messageID, senderID } = event;
-	
-	// ===== Determine target in three ways =====
-	let targetIDs = [];
-	let userNames = [];
-	let responseMessage = "";
-	
-	// Way 1: Reply to a message
-	if (event.type === "message_reply") {
-		targetIDs.push(event.messageReply.senderID);
-		try {
-			const userInfo = await api.getUserInfo(event.messageReply.senderID);
-			userNames.push(userInfo[event.messageReply.senderID]?.name || "Unknown");
-		} catch (e) {
-			userNames.push("Unknown");
-		}
-	} 
-	// Way 2: Check if there are arguments
-	else if (args[0]) {
-		// Check for Facebook profile link
-		if (args[0].indexOf(".com/") !== -1) {
-			try {
-				const uid = await api.getUID(args[0]);
-				if (uid) {
-					targetIDs.push(uid);
-					try {
-						const userInfo = await api.getUserInfo(uid);
-						userNames.push(userInfo[uid]?.name || "Unknown");
-					} catch (e) {
-						userNames.push("Unknown");
-					}
-				}
-			} catch (e) {
-				return api.sendMessage("❌ Facebook লিঙ্ক থেকে আইডি পাওয়া যায়নি!", threadID, messageID);
-			}
-		}
-		// Check for UID (numeric string)
-		else if (/^\d+$/.test(args[0]) && args[0].length > 5) {
-			targetIDs.push(args[0]);
-			try {
-				const userInfo = await api.getUserInfo(args[0]);
-				userNames.push(userInfo[args[0]]?.name || "Unknown");
-			} catch (e) {
-				userNames.push("Unknown");
-			}
-		}
-		// Check for full name mention or traditional mention
-		else if (args.join().includes("@")) {
-			// Try traditional Facebook mentions first
-			if (Object.keys(event.mentions || {}).length > 0) {
-				for (let id in event.mentions) {
-					targetIDs.push(id);
-					userNames.push(event.mentions[id] || "Unknown");
-				}
-			} else {
-				// Try full name detection
-				const targetID = await getUIDByFullName(api, threadID, args.join(" "));
-				if (targetID) {
-					targetIDs.push(targetID);
-					try {
-						const userInfo = await api.getUserInfo(targetID);
-						userNames.push(userInfo[targetID]?.name || "Unknown");
-					} catch (e) {
-						userNames.push("Unknown");
-					}
-				}
-			}
-		}
-		// If multiple traditional mentions are present
-		else if (Object.keys(event.mentions || {}).length > 0) {
-			for (let id in event.mentions) {
-				targetIDs.push(id);
-				userNames.push(event.mentions[id] || "Unknown");
-			}
-		}
-	}
-	// Way 3: Traditional mentions (without args)
-	else if (Object.keys(event.mentions).length > 0) {
-		for (let id in event.mentions) {
-			targetIDs.push(id);
-			userNames.push(event.mentions[id] || "Unknown");
-		}
-	}
-	
-	// If no targets found, show sender's UID
-	if (targetIDs.length === 0) {
-		targetIDs.push(senderID);
-		try {
-			const userInfo = await api.getUserInfo(senderID);
-			userNames.push(userInfo[senderID]?.name || "You");
-		} catch (e) {
-			userNames.push("You");
-		}
-	}
-	
+// ===== Image Generator =====
+async function createUserImage(name, uid, avatarUrl) {
 
-	if (targetIDs.length === 1) {
-		try {
-			const userInfo = await api.getUserInfo(targetIDs[0]);
-			const userName = userInfo[targetIDs[0]]?.name || userNames[0];
-			
-			await api.sendMessage(`👤𝗨𝘀𝗲𝗿: ${userName}👇🏼`, threadID);
-			
-			return api.sendMessage(`${targetIDs[0]}`, threadID);
-		} catch (e) {
-		
-			await api.sendMessage(`👤𝗨𝘀𝗲𝗿: ${userNames[0]}👇🏼`, threadID);
-			
-			return api.sendMessage(`${targetIDs[0]}`, threadID);
-		}
-	} else {
-		// প্রথম মেসেজ: সব User এর নাম
-		let nameMessage = "📋 Multiple Users:\n\n";
-		for (let i = 0; i < targetIDs.length; i++) {
-			nameMessage += `${i+1}. ${userNames[i]}\n`;
-		}
-		await api.sendMessage(nameMessage, threadID);
-		
-		// দ্বিতীয় মেসেজ: সব UID
-		let uidMessage = "📋 Multiple UIDs:\n\n";
-		for (let i = 0; i < targetIDs.length; i++) {
-			uidMessage += `${i+1}. ${targetIDs[i]}\n`;
-		}
-		return api.sendMessage(uidMessage, threadID);
-	}
+    const width = 1200;
+    const height = 300;
+
+    const canvas = createCanvas(width,height);
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#0b0016";
+    ctx.fillRect(0,0,width,height);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    for(let i=0;i<width;i+=40){
+        ctx.beginPath();
+        ctx.moveTo(i,0);
+        ctx.lineTo(i,height);
+        ctx.stroke();
+    }
+
+    for(let i=0;i<height;i+=40){
+        ctx.beginPath();
+        ctx.moveTo(0,i);
+        ctx.lineTo(width,i);
+        ctx.stroke();
+    }
+
+    const avatar = await loadImage(avatarUrl);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(150,150,90,0,Math.PI*2);
+    ctx.clip();
+    ctx.drawImage(avatar,60,60,180,180);
+    ctx.restore();
+
+    ctx.strokeStyle = "#ff00ff";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(150,150,95,0,Math.PI*2);
+    ctx.stroke();
+
+    ctx.font = "bold 60px Arial";
+    ctx.fillStyle = "#ff00ff";
+    ctx.shadowColor = "#ff00ff";
+    ctx.shadowBlur = 25;
+    ctx.fillText(name,350,140);
+
+    ctx.font = "bold 35px Arial";
+    ctx.fillStyle = "#00ffff";
+    ctx.shadowColor = "#00ffff";
+    ctx.shadowBlur = 25;
+    ctx.fillText("ID : "+uid,350,200);
+
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(350,240);
+    ctx.lineTo(width-100,240);
+    ctx.stroke();
+
+    return canvas.toBuffer();
+}
+
+module.exports.run = async function({api,event,args}) {
+
+    const {threadID,messageID,senderID} = event;
+
+    let uid = senderID;
+
+    // Reply UID
+    if(event.type == "message_reply"){
+        uid = event.messageReply.senderID;
+    }
+
+    // Mention UID
+    if(Object.keys(event.mentions).length > 0){
+        uid = Object.keys(event.mentions)[0];
+    }
+
+    // Facebook Link UID
+    if(args[0] && args[0].includes("facebook.com")){
+        try{
+
+            const data = await axios.get(
+                "https://api.findids.net/api/get-uid-from-username?username="+args[0]
+            );
+
+            if(data.data.id){
+                uid = data.data.id;
+            }
+
+        }catch{
+            return api.sendMessage("❌ UID পাওয়া যায়নি",threadID,messageID);
+        }
+    }
+
+    // Full Name Detection
+    if(args.join(" ").includes("@")){
+        const id = await getUIDByFullName(api,threadID,args.join(" "));
+        if(id) uid = id;
+    }
+
+    const info = await api.getUserInfo(uid);
+    const name = info[uid].name;
+
+    const avatarUrl = `https://graph.facebook.com/${uid}/picture?width=720&height=720`;
+
+    const img = await createUserImage(name,uid,avatarUrl);
+
+    const filePath = path.join(__dirname,"uid.png");
+
+    fs.writeFileSync(filePath,img);
+
+    api.sendMessage({
+        body:`👤 ${name}`,
+        attachment: fs.createReadStream(filePath)
+    },threadID,()=>{
+        fs.unlinkSync(filePath)
+    },messageID);
+
 };
