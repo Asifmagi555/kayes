@@ -8,7 +8,7 @@ module.exports.config = {
   version: "6.0.0",
   hasPermssion: 0,
   credits: "Rahat Islam",
-  description: "Premium Cyber Neon UID Card with Matrix & Futuristic Effects",
+  description: "Premium uid",
   commandCategory: "tools",
   usages: "uid / reply / mention / link / @fullname",
   cooldowns: 5
@@ -160,8 +160,8 @@ async function createUserImage(name, uid, avatarUrl) {
   // ===== Credit Text (Tea Color) =====
   const creditText = "credit : Rahat Islam";
   ctx.font = "bold 28px Arial";
-  ctx.fillStyle="#006400";  // Tea color
-  ctx.shadowColor="#FFFFFF";
+  ctx.fillStyle="#00ffff";  // Tea color
+  ctx.shadowColor="#00ffff";
   ctx.shadowBlur=14;
 
   const textWidth = ctx.measureText(creditText).width;
